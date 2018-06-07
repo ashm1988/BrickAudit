@@ -118,5 +118,6 @@ def main():
         logging.warning("Main: %s does not exist", audit_path)
     # sftp_to_edge()
 
+
 if __name__ == '__main__':
     main()
