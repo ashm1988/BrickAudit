@@ -15,7 +15,7 @@ today = 20180501
 logging.debug("current date %s", today)
 
 #############################################################################################################
-#  Script: Decodes the Audit logs and send them to the Edge Server                                          #
+#  Script: Pulls the Audits from the server and decodes them                                                #
 #  Version: 1.0                                                                                             #
 #  Author: Ash                                                                                              #
 #############################################################################################################
