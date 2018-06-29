@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+__version__ = '1.0'
+
 import zipfile
 import os
 import datetime
@@ -82,12 +84,12 @@ class ZipFiles(object):
 
 def main():
     usage = "usage: %prog [options]"
-    parser = optparse.OptionParser(usage=usage)
+    parser = optparse.OptionParser(usage=usage, version='%prog ' + __version__)
     parser.add_option('-d', '--date', action='store', default='today', dest='filedate', metavar=' ',
                       help='Choose the date of the file. [default: %default]')
     parser.add_option('-a', '--audit-loc', action='store', default='/home/ot', dest='audit_location', metavar=' ',
                       help='Define Audit Location i.e. LogFiles directory. [default: %default]')
-    parser.add_option('-t', '--tmp-loc', action='store', default='/var/tmp/audit_zips', dest='tmp_location', metavar=' ',
+    parser.add_option('-t', '--tmp-loc', action='store', default='/var/tmp/audits', dest='tmp_location', metavar=' ',
                       help='Define temp file location where audits will be copied and processed '
                            'i.e. LogFiles directory. [default: %default]')
     (options, args) = parser.parse_args()
