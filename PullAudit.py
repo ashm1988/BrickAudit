@@ -23,6 +23,7 @@ A2C_loc = r'C:\Users\amcfarlane\Documents'
 
 sftp_script_loc = r'/opt/ot/scripts/zip_audits.py'
 
+
 class ZipFiles(object):
     def __init__(self, instance, tmp_loc):
         self.instance = instance
@@ -44,9 +45,9 @@ class ZipFiles(object):
         """
 
         # Push the scrip to the server
-        if sftp_script not in self.sftp.listdir(scripts_loc):
-            logging.debug('push zip: Pushing zip_audits script to server')
-            self.sftp.put(sftp_script, sftp_script_loc)
+        # if sftp_script not in self.sftp.listdir(scripts_loc):
+        logging.debug('push zip: Pushing zip_audits script to %s', self.instance['Host'])
+        self.sftp.put(sftp_script, sftp_script_loc)
 
         # Change the script permissions and owner so it can be run
         self.sftp.chmod(sftp_script_loc, 0755)
@@ -62,7 +63,7 @@ class ZipFiles(object):
         stdin, stdout, stderr = self.ssh.exec_command('sudo python %s -d %s -t %s -a %s'
                                                       % (sftp_script_loc, self.fdate, self.tmp_loc, self.audit_loc))
         logging.info(stderr.read())
-        # logging.info(stdout.read())
+        logging.info(stdout.read())
 
         self.pull_audits()
 
@@ -112,8 +113,17 @@ class DecodeAudits(object):
 
 def main():
 
+    config_file = 'jsontest.json'
     tmp_loc = '/home/ot/audits'
-    parsed_json = json.loads(open('jsontest.json').read())
+    try:
+        parsed_json = json.loads(open(config_file).read())
+    except ValueError as err:
+        logging.error('Syntax error in %s', config_file)
+        sys.exit()
+    except IOError as err:
+        logging.error('Cannot find %s', config_file)
+        sys.exit()
+
     for host in parsed_json.values():
         for instance in host:
             zipaud = ZipFiles(instance, tmp_loc)

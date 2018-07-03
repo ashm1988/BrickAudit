@@ -24,21 +24,36 @@ class ZipFiles(object):
             os.makedirs(self.temp_directory)
 
         self.output_name = 'Audit.%s.zip' % datetime.date.today().strftime("%Y%m%d")
-        self.zf = zipfile.ZipFile(os.path.join(self.temp_directory, self.output_name), mode='w')
+        # self.zf = zipfile.ZipFile(os.path.join(self.temp_directory, self.output_name), mode='w')
+        logging.info('\n')
 
     def audit_date(self):
         if self.filedate == 'today':
             fdate = datetime.date.today().strftime("%Y%m%d")  # current_date in {20181231 format}
             adate = ['Audit.'+fdate+'.log']
             self.date_logging(adate)
-            self.zip_date(adate)
+            self.audit_exists(adate)
         elif self.filedate == 'yesterday':
             fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")  # current_date -1 day
             adate = ['Audit.'+fdate+'.log']
             self.date_logging(adate)
-            self.zip_date(adate)
+            self.audit_exists(adate)
         elif self.filedate == 'all':
             self.all_audits()
+        else:
+            logging.error('%s not recognised as a valid option', self.filedate)
+
+    def audit_exists(self, adate):
+        prod_files = os.listdir(self.audit_location)
+        for audit in adate:
+            if audit in prod_files:
+                print 'exists'
+                self.zip_date(adate)
+            else:
+                print adate
+                print prod_files
+                print 'dont'
+                logging.error('%s could not be found', adate)
 
     def date_logging(self, fdate):
         logging.debug('audit date: Audit date requested: %s', fdate)

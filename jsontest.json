@@ -1,29 +1,29 @@
 {
     "ALC-PRD-LIN-030":[
         {
-            "Client" : "FME",
-            "Exchange" : "ASX",
-            "Instance" : "ft4asx1",
-            "Host" : "10.234.100.30",
-            "Date" : "today",
-            "Audit_Location" : "/home/ot",
-            "SessionID" : "GHFE1-5"
-        },
-        {
             "Client" : "RJO",
             "Exchange" : "ASX",
-            "Instance" : "ft4asx2",
+            "Instance" : "all",
             "Host" : "10.234.100.30",
-            "Date" : "today",
+            "Date" : "all",
             "Audit_Location" : "/home/ot",
-            "SessionID" : "GHFE1-5"
+            "SessionID" : "all"
         }
     ],
     "ALC-PRD-LIN-020":[
         {
             "Client" : "FME",
             "Exchange" : "ASX",
-            "Instance" : "ft4asx3",
+            "Instance" : "today",
+            "Host" : "10.234.100.20",
+            "Date" : "today",
+            "Audit_Location" : "/home/ot",
+            "SessionID" : "GHFE6"
+        },
+        {
+            "Client" : "FME",
+            "Exchange" : "ASX",
+            "Instance" : "yesterday",
             "Host" : "10.234.100.20",
             "Date" : "yesterday",
             "Audit_Location" : "/home/ot",
