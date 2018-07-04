@@ -8,9 +8,15 @@ import shutil
 import zipfile
 import paramiko
 import json
+import gnupg
 
-
-logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s', level=logging.DEBUG)
+#  Logging
+# logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
+# fh = logging.FileHandler('filehandler.log')
+# fh.setLevel(logging.DEBUG)
+# formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(message)s')
+# fh.setFormatter(formatter)
+# logging.getLogger('').addHandler(fh)
 
 ####################
 # for this script ##
@@ -78,6 +84,13 @@ class ZipFiles(object):
             logging.info('pull audits: Pulling %s back to %s', self.zip_name, self.zip_path)
             self.sftp.get(os.path.join(self.tmp_loc, z).replace('\\', '/'), os.path.join(self.zip_path, self.zip_name))
 
+        # Tidy up old zips and directory
+        for zip in new_zip:
+            logging.debug('pull audits: Deleting %s', zip)
+            self.sftp.remove(os.path.join(self.tmp_loc, zip).replace('\\', '/'))
+        logging.debug('pull audits: Deleting %s', self.tmp_loc)
+        self.sftp.rmdir(self.tmp_loc)
+
         self.unzip()
 
     def unzip(self):
@@ -90,6 +103,11 @@ class ZipFiles(object):
                 logging.debug("unzip: Unzipping %s", z)
                 zf = zipfile.ZipFile(os.path.join(self.zip_path, z), 'r')
                 zf.extractall(self.zip_path)
+                zf.close()
+
+        for f in os.listdir(self.zip_path):
+            if f.endswith('.zip'):
+                os.remove(os.path.join(self.zip_path, f))
 
 
 class DecodeAudits(object):
@@ -109,9 +127,51 @@ class DecodeAudits(object):
                 if result == 0:
                     logging.debug("Decode Audits: %s decoded" % f)
 
+        self.zip_decoded()
+
+    def zip_decoded(self):
+
+        if os.listdir(self.zip_path):
+            zf = zipfile.ZipFile(os.path.join(self.zip_path, self.zip_name), mode='w')
+            for f in os.listdir(self.zip_path):
+                if not f.endswith('.zip'):
+                    zf.write(os.path.join(self.zip_path, f), f, compress_type=zipfile.ZIP_DEFLATED)
+
+            zf.close()
+
+        # Delete the left over files
+        for f in os.listdir(self.zip_path):
+            if not f.endswith('.zip'):
+                os.remove(os.path.join(self.zip_path, f))
+
+
+class EncryptZIPs(object):
+    def __init__(self, zipaud):
+        self.zip_path = zipaud.zip_path
+        self.client = zipaud.instance['Client']
+        self.gpgbin = r'C:\Program Files (x86)\GnuPG\bin\gpg.exe'
+        self.gpghome = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
+
+    def encrypt(self):
+        gpg = gnupg.GPG(gpgbinary=self.gpgbin, gnupghome=self.gpghome)
+        for f in os.listdir(self.zip_path):
+            if f.endswith('.zip'):
+                output_name = f+'.gpg'
+                stream = open(os.path.join(self.zip_path, f), 'rb')
+                result = gpg.encrypt_file(stream, 'Client '+self.client, output=os.path.join(self.zip_path, output_name))
+                if not result.ok:
+                    logging.error('encrypt: %s failed to encrypt: %s', f, result.status)
+                else:
+                    logging.info('encrypt: %s encrypted successfully', output_name)
 
 
 def main():
+    logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
+    fh = logging.FileHandler('filehandler.log')
+    fh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(message)s')
+    fh.setFormatter(formatter)
+    logging.getLogger('').addHandler(fh)
 
     config_file = 'jsontest.json'
     tmp_loc = '/home/ot/audits'
@@ -130,6 +190,8 @@ def main():
             zipaud.run_zipit()
             decode = DecodeAudits(zipaud)
             decode.decode()
+            encrypt = EncryptZIPs(zipaud)
+            encrypt.encrypt()
 
 
 if __name__ == '__main__':

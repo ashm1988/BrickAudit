@@ -1,6 +1,10 @@
+import logging
 
-audittodecode = []
+logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(name)s: %(message)s', level=logging.INFO)
+fh = logging.FileHandler('filehandler.log')
+fh.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(name)s: %(message)s')
+fh.setFormatter(formatter)
+logging.getLogger('').addHandler(fh)
 
-if not audittodecode:
-    print 'empty'
-
+logging.info('log this message')

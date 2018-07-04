@@ -13,7 +13,6 @@ import sys
 
 logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s', level=logging.DEBUG)
 
-
 class ZipFiles(object):
     def __init__(self, audit_location, temp_directory, filedate):
         self.audit_location = audit_location
@@ -47,12 +46,8 @@ class ZipFiles(object):
         prod_files = os.listdir(self.audit_location)
         for audit in adate:
             if audit in prod_files:
-                print 'exists'
                 self.zip_date(adate)
             else:
-                print adate
-                print prod_files
-                print 'dont'
                 logging.error('%s could not be found', adate)
 
     def date_logging(self, fdate):
