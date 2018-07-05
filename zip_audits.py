@@ -11,7 +11,8 @@ import shutil
 import optparse
 import sys
 
-logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
+
 
 class ZipFiles(object):
     def __init__(self, audit_location, temp_directory, filedate):
@@ -23,7 +24,6 @@ class ZipFiles(object):
             os.makedirs(self.temp_directory)
 
         self.output_name = 'Audit.%s.zip' % datetime.date.today().strftime("%Y%m%d")
-        # self.zf = zipfile.ZipFile(os.path.join(self.temp_directory, self.output_name), mode='w')
         logging.info('\n')
 
     def audit_date(self):
@@ -49,6 +49,7 @@ class ZipFiles(object):
                 self.zip_date(adate)
             else:
                 logging.error('%s could not be found', adate)
+                sys.exit()
 
     def date_logging(self, fdate):
         logging.debug('audit date: Audit date requested: %s', fdate)
