@@ -13,16 +13,7 @@ import zipfile
 import paramiko
 import json
 import gnupg
-
-
-
-#  Logging
-# logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
-# fh = logging.FileHandler('filehandler.log')
-# fh.setLevel(logging.DEBUG)
-# formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(message)s')
-# fh.setFormatter(formatter)
-# logging.getLogger('').addHandler(fh)
+import pysftp
 
 ####################
 # for this script ##
@@ -30,8 +21,10 @@ sftp_script = 'zip_audits.py'  # Name of SFTP Script
 scripts_loc = '/opt/ot/scripts'  # Where on the remote server to put the Script
 sftp_script_loc = r'/opt/ot/scripts/zip_audits.py'  # Lazy location naming for the script to run on the remote server
 client_zip_location = r'C:\Users\amcfarlane\Documents\temp\audits'  # Base location of where to save/process the audits
-# A2C_loc = '/opt/ot/scripts/AuditToCsv'
 A2C_loc = r'C:\Users\amcfarlane\Documents'  # location of the FR Admin Tools
+ssh_key_loc = r'C:\cygwin64\home\amcfarlane\.ssh'  # ssh key location
+gpg_loc = r'C:\Program Files (x86)\GnuPG\bin\gpg.exe'
+gpg_home = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
 ####################
 
 
@@ -64,7 +57,7 @@ class ZipFiles(object):
 
         # Get logger for the individual instance
         fh = logging.FileHandler(os.path.join(self.log_path, self.zip_name[:-4]+'.log'))
-        fh.setLevel(logging.INFO)
+        fh.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(message)s')
         fh.setFormatter(formatter)
         logging.getLogger('').addHandler(fh)
@@ -74,7 +67,7 @@ class ZipFiles(object):
         self.audit_loc = instance['Audit_Location']
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(instance['Host'], username='root', key_filename=r'C:\cygwin64\home\amcfarlane\.ssh\id_rsa', port=22)
+        self.ssh.connect(instance['Host'], username='root', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
         self.sftp = self.ssh.open_sftp()
 
     def push_zip_script(self, uid):
@@ -110,11 +103,6 @@ class ZipFiles(object):
 
         logging.info(stderr.read())
         # logging.info(stdout.read())
-        # for l in stderr:
-        #     stderrout = l
-        #     print l
-        #     if re.search(r'could not be found', l) or re.search(r'could not be found', l):
-        #         sys.exit()
 
         # Run pull audits
         self.pull_audits()
@@ -126,8 +114,8 @@ class ZipFiles(object):
         # Pull back the created zips in their respective folders
         new_zip = self.sftp.listdir(self.tmp_loc)
         if not new_zip:
-            logging.error('Files files to pull back')
-            sys.exit()
+            # logging.error('No files to pull back')
+            raise Exception('Requested files not found on the remote server')
         else:
             for z in new_zip:
                 logging.info('Pulling %s back to %s', self.zip_name, self.zip_path)
@@ -167,9 +155,9 @@ class DecodeAudits(object):
         self.zip_name = zipaud.zip_name
         self.zip_path = zipaud.zip_path
         if sys.platform == 'linux' or sys.platform == 'linux2':
-            self.Audit2csv = 'AuditToCSV'
+            self.Audit2csv = 'AuditToCsv'
         else:
-            self.Audit2csv = 'AuditToCSV.exe'
+            self.Audit2csv = 'AuditToCsv.exe'
 
     def decode(self):
         for f in os.listdir(self.zip_path):
@@ -184,6 +172,7 @@ class DecodeAudits(object):
                     logging.info("%s decoded", f)
                 else:
                     logging.error('%s failed to decode: %s', f, result)
+                    raise Exception('Unable to decode %s' % f)
 
         self.zip_decoded()
 
@@ -207,8 +196,8 @@ class EncryptZIPs(object):
     def __init__(self, zipaud):
         self.zip_path = zipaud.zip_path
         self.recipient = zipaud.instance['Recipient']
-        self.gpgbin = r'C:\Program Files (x86)\GnuPG\bin\gpg.exe'
-        self.gpghome = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
+        self.gpgbin = gpg_loc
+        self.gpghome = gpg_home
 
     def encrypt(self):
         gpg = gnupg.GPG(gpgbinary=self.gpgbin, gnupghome=self.gpghome)
@@ -230,25 +219,36 @@ class BrickFTP(object):
         self.enc_loc = zipaud.instance['Recipient']
         self.zip_path = zipaud.zip_path
         self.archive_path = zipaud.archive_path
+        self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'], zipaud.instance['Exchange'], zipaud.instance['Instance'])
+        self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'], zipaud.instance['Exchange'], zipaud.instance['Instance'])
+
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect('paas.brickftp.com', username='a.mcfarlane', key_filename=r'C:\cygwin64\home\amcfarlane\.ssh\id_rsa', port=22)
+        self.ssh.connect('paas.brickftp.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
         self.sftp = self.ssh.open_sftp()
-
+        cnopts = pysftp.CnOpts()
+        cnopts.hostkeys = None
+        self.pysftp = pysftp.Connection('paas.brickftp.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
 
     def push_to_brick(self):
         enc_files = os.listdir(self.zip_path)
+        # Create folder structure on Brick
+        if not self.pysftp.exists(self.brick_loc):
+            self.pysftp.makedirs(self.brick_loc)
+        if not self.pysftp.exists(self.brick_loc_archive):
+            self.pysftp.makedirs(self.brick_loc_archive)
+
         # Push the gpg to Brick
         for f in enc_files:
             if f.endswith('.gpg'):
-                logging.info('Pushing %s to %s on the Brick server', f, self.enc_loc)
-                self.sftp.put(os.path.join(self.zip_path, f), os.path.join(self.enc_loc, f))
+                logging.info('Pushing %s to %s on the Brick server', f, self.brick_loc)
+                self.sftp.put(os.path.join(self.zip_path, f), os.path.join(self.brick_loc, f))
 
-        # Copy zip to Archive
-        for f in enc_files:
-            if f.endswith('.zip'):
-                logging.info('Archive %s to %s', f, self.archive_path)
-                shutil.move(os.path.join(self.zip_path, f), os.path.join(self.archive_path, f))
+        # # Copy zip to Archive
+        # for f in enc_files:
+        #     if f.endswith('.zip'):
+        #         logging.info('Archive %s to %s', f, self.archive_path)
+        #         shutil.move(os.path.join(self.zip_path, f), os.path.join(self.archive_path, f))
 
         # Delete the uploaded gpg
         for f in enc_files:
@@ -258,18 +258,13 @@ class BrickFTP(object):
 
 def main():
     # Set logging
-    logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.INFO)
-    fh = logging.FileHandler('filehandler.log')
-    fh.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s: %(levelname)s: %(funcName)s: %(message)s')
-    fh.setFormatter(formatter)
-    logging.getLogger('').addHandler(fh)
+    logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
 
     complete = 0
-    failed = 0
+    failed = []
 
-    config_file = 'jsontest.json'
-    tmp_loc = '/home/ot/audits'
+    config_file = 'client_conf.json'
+    tmp_loc = '/home/ot/audits'  # Temp location for Audits on remote server
     try:
         parsed_json = json.loads(open(config_file).read())
     except ValueError as err:
@@ -289,9 +284,12 @@ def main():
             elif instance['Date'] == 'all':
                 fdate = datetime.date.today().strftime("%Y%m%d") + '_All'
 
+            instance_name = "%s's %s_%s_AuditTrail_%s_%s_%s" % (instance['Recipient'], instance['Client'],
+                                                                instance['Exchange'], instance['Instance'],
+                                                                instance['SessionID'], fdate)
+
             try:
-                logging.info("Trying %s's %s_%s_AuditTrail_%s_%s_%s", instance['Recipient'], instance['Client'],
-                             instance['Exchange'], instance['Instance'], instance['SessionID'], fdate)
+                logging.info("Trying %s", instance_name)
                 zipaud = ZipFiles(instance, tmp_loc)
                 zipaud.run_zipit()
                 decode = DecodeAudits(zipaud)
@@ -301,14 +299,16 @@ def main():
                 brick = BrickFTP(zipaud)
                 brick.push_to_brick()
                 complete += 1
-            except:
-                logging.error("%s 's %s_%s_AuditTrail_%s_%s_%s Failed to complete", instance['Recipient'],
-                              instance['Client'], instance['Exchange'], instance['Instance'], instance['SessionID'],
-                              fdate)
-                failed += 1
+                logging.info('%s Completed Successfully', instance_name)
+            except Exception as err:
+                # raise
+                print err
+                logging.error("%s Failed: %s", instance_name, err)
+                failed.append(instance_name)
 
-    logging.info('%s Completed\n'
-                 '%s Failed', complete, failed)
+    logging.info('%s Completed', complete)
+    logging.error('%s Completed', failed)
+
 
 if __name__ == '__main__':
     main()
