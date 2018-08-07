@@ -8,15 +8,22 @@ import datetime
 import os
 import re
 import subprocess
-import shutil
 import zipfile
 import paramiko
 import json
 import gnupg
 import pysftp
+from socket import gethostname
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEBase import MIMEBase
+from email.MIMEText import MIMEText
+from email.Utils import COMMASPACE, formatdate
+from email import Encoders
 
 ####################
 # for this script ##
+current_dir = os.path.dirname(os.path.abspath(__file__))
 sftp_script = 'zip_audits.py'  # Name of SFTP Script
 scripts_loc = '/opt/ot/scripts'  # Where on the remote server to put the Script
 sftp_script_loc = r'/opt/ot/scripts/zip_audits.py'  # Lazy location naming for the script to run on the remote server
@@ -31,19 +38,23 @@ gpg_home = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
 class ZipFiles(object):
     def __init__(self, instance, tmp_loc):
         # Set date for the zip name
-        if instance['Date'] == 'today':
+        if instance['Date'].lower() == 'today':
             fdate = datetime.date.today().strftime("%Y%m%d")
-        elif instance['Date'] == 'yesterday':
+        elif instance['Date'].lower() == 'yesterday':
             fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
-        elif instance['Date'] == 'all':
+        elif instance['Date'].lower() == 'all':
             fdate = datetime.date.today().strftime("%Y%m%d")+'_All'
 
         # Set zippath/zipname and instance vars
         self.instance = instance
-        self.zip_path = os.path.join(client_zip_location, self.instance['Recipient'], self.instance['Exchange'], self.instance['Instance'], 'Processing')
+        self.zip_path = os.path.join(client_zip_location, self.instance['Recipient'], self.instance['Exchange'],
+                                     self.instance['Instance'], 'Processing')
         self.log_path = os.path.join(self.zip_path, '../', 'Logs')
+        # Currently not used as not archiving on the internal server
         self.archive_path = os.path.join(self.zip_path, '../', 'Archive')
-        self.zip_name = '%s_%s_AuditTrail_%s_%s_%s.zip' % (self.instance['Client'], self.instance['Exchange'], self.instance['Instance'], self.instance['SessionID'], fdate)
+        self.zip_name = '%s_%s_AuditTrail_%s_%s_%s.zip' % (self.instance['Client'],
+                                                           self.instance['Exchange'], self.instance['Instance'],
+                                                           self.instance['SessionID'], fdate)
 
         # Create directory's
         if not os.path.exists(self.zip_path):
@@ -62,7 +73,7 @@ class ZipFiles(object):
         fh.setFormatter(formatter)
         logging.getLogger('').addHandler(fh)
 
-        self.fdate = instance['Date']
+        self.fdate = instance['Date'].lower()
         self.tmp_loc = tmp_loc
         self.audit_loc = instance['Audit_Location']
         self.ssh = paramiko.SSHClient()
@@ -80,7 +91,7 @@ class ZipFiles(object):
         # Push the scrip to the server
         # if sftp_script not in self.sftp.listdir(scripts_loc):
         logging.info('Pushing zip_audits script to %s', self.instance['Host'])
-        self.sftp.put(sftp_script, sftp_script_loc)
+        self.sftp.put(os.path.join(current_dir, sftp_script), sftp_script_loc)
 
         # Change the script permissions and owner so it can be run
         logging.info('Changing SFTP Script permissions')
@@ -100,7 +111,6 @@ class ZipFiles(object):
         logging.info('Running SFTP Script on remote server')
         stdin, stdout, stderr = self.ssh.exec_command('sudo python %s -d %s -t %s -a %s'
                                                       % (sftp_script_loc, self.fdate, self.tmp_loc, self.audit_loc))
-
         logging.info(stderr.read())
         # logging.info(stdout.read())
 
@@ -152,6 +162,7 @@ class ZipFiles(object):
 
 class DecodeAudits(object):
     def __init__(self, zipaud):
+        self.instance = zipaud.instance
         self.zip_name = zipaud.zip_name
         self.zip_path = zipaud.zip_path
         if sys.platform == 'linux' or sys.platform == 'linux2':
@@ -159,17 +170,40 @@ class DecodeAudits(object):
         else:
             self.Audit2csv = 'AuditToCsv.exe'
 
+    def get_mode(self):
+        globex = ['CME', 'NYM', 'CBT', 'GBX', 'MSGW']
+        cfe = ['CFE']
+        mifid = ['EUR', 'CURVE', 'EUNX', 'IDME', 'LME', 'NORD', 'Nordic', 'ICEUK', 'ICEEU', 'ICEUS', 'MEFF', 'OMX']
+
+        exchange = self.instance['Exchange'].upper()
+        if exchange in globex:
+            mode = '--mode Globex'
+        elif exchange in cfe:
+            mode = '--mode CFE'
+        elif exchange in mifid:
+            mode = '--mode MiFID'
+        else:
+            mode = '--mode FrontRunner'
+
+        logging.debug("Applying AuditToCsv %s for %s", mode, self.instance['Exchange'])
+
+        return mode
+
     def decode(self):
+        mode = self.get_mode()
+        A2C_path = os.path.join(A2C_loc, self.Audit2csv)
+        A2C_opt = ' --override --excel ' + mode
+        A2C_ver = ' -a ' + os.path.join(A2C_loc, 'Versions')
+
         for f in os.listdir(self.zip_path):
             if re.search('Audit.*.log', f):
                 output_name = f[:-4]
+                A2C_in = ' -i ' + os.path.join(self.zip_path, f)
+                A2C_out = ' -o ' + os.path.join(self.zip_path, '%s.csv' % output_name)
                 logging.info('Decoding %s', os.path.join(self.zip_path, f))
-                result = subprocess.call(os.path.join(A2C_loc, self.Audit2csv + ' --override -a ' +
-                                                      os.path.join(A2C_loc, 'Versions') + ' -i ') +
-                                         os.path.join(self.zip_path, f) +
-                                         ' -o ' + os.path.join(self.zip_path, '%s.csv' % output_name), shell=True)
+                result = subprocess.call(A2C_path + A2C_opt + A2C_ver + A2C_in + A2C_out, shell=True)
                 if result == 0:
-                    logging.info("%s decoded", f)
+                    logging.info("%s successfully decoded", f)
                 else:
                     logging.error('%s failed to decode: %s', f, result)
                     raise Exception('Unable to decode %s' % f)
@@ -182,6 +216,7 @@ class DecodeAudits(object):
             zf = zipfile.ZipFile(os.path.join(self.zip_path, self.zip_name), mode='w')
             for f in os.listdir(self.zip_path):
                 if not f.endswith('.zip'):
+                    logging.info('Adding %s to %s', f, self.zip_name)
                     zf.write(os.path.join(self.zip_path, f), f, compress_type=zipfile.ZIP_DEFLATED)
 
             zf.close()
@@ -189,6 +224,7 @@ class DecodeAudits(object):
         # Delete the left over files
         for f in os.listdir(self.zip_path):
             if not f.endswith('.zip'):
+                logging.info('Deleting zipped: %s', f)
                 os.remove(os.path.join(self.zip_path, f))
 
 
@@ -206,11 +242,18 @@ class EncryptZIPs(object):
                 logging.info('Encrypting %s', f)
                 output_name = f+'.gpg'
                 stream = open(os.path.join(self.zip_path, f), 'rb')
-                result = gpg.encrypt_file(stream, 'Client '+self.recipient, output=os.path.join(self.zip_path, output_name))
+                result = gpg.encrypt_file(stream, 'Recipient ' + self.recipient, output=os.path.join(self.zip_path, output_name))
                 if not result.ok:
                     logging.error('%s failed to encrypt: %s', f, result.status)
+                    raise Exception('Unable to encrypt: %s' % result.status)
                 else:
                     logging.info('%s encrypted successfully', output_name)
+
+        # Delete the zips that have been encrypted
+        for f in os.listdir(self.zip_path):
+            if f.endswith('.zip'):
+                logging.info('Deleting encrypted zip: %s', f)
+                os.remove(os.path.join(self.zip_path, f))
 
 
 class BrickFTP(object):
@@ -219,8 +262,8 @@ class BrickFTP(object):
         self.enc_loc = zipaud.instance['Recipient']
         self.zip_path = zipaud.zip_path
         self.archive_path = zipaud.archive_path
-        self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'], zipaud.instance['Exchange'], zipaud.instance['Instance'])
-        self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'], zipaud.instance['Exchange'], zipaud.instance['Instance'])
+        self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'])  # zipaud.instance['Exchange'], zipaud.instance['Instance'])
+        self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'])
 
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -234,8 +277,10 @@ class BrickFTP(object):
         enc_files = os.listdir(self.zip_path)
         # Create folder structure on Brick
         if not self.pysftp.exists(self.brick_loc):
+            logging.info('Creating %s on Brick server', self.brick_loc)
             self.pysftp.makedirs(self.brick_loc)
         if not self.pysftp.exists(self.brick_loc_archive):
+            logging.info('Creating %s on Brick server', self.brick_loc_archive)
             self.pysftp.makedirs(self.brick_loc_archive)
 
         # Push the gpg to Brick
@@ -256,6 +301,39 @@ class BrickFTP(object):
                 os.remove(os.path.join(self.zip_path, f))
 
 
+class EmailResult(object):
+    def __init__(self):
+        pass
+
+    def sendMail(self, to, fro, subject, text, files=[], server="localhost"):
+        assert type(to) == list
+        assert type(files) == list
+
+        textmsg = ''
+        for instance in text:
+            textmsg += instance + '\n'
+
+        msg = MIMEMultipart()
+        msg['From'] = fro
+        msg['To'] = COMMASPACE.join(to)
+        msg['Date'] = formatdate(localtime=True)
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(textmsg))
+
+        for file in files:
+            part = MIMEBase('application', "octet-stream")
+            part.set_payload(open(file, "rb").read())
+            Encoders.encode_base64(part)
+            part.add_header('Content-Disposition', 'attachment; filename="%s"'
+                            % os.path.basename(file))
+            msg.attach(part)
+
+        smtp = smtplib.SMTP(server)
+        smtp.sendmail(fro, to, msg.as_string())
+        smtp.close()
+
+
 def main():
     # Set logging
     logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
@@ -263,7 +341,7 @@ def main():
     complete = 0
     failed = []
 
-    config_file = 'client_conf.json'
+    config_file = os.path.join(current_dir, 'client_conf.json')
     tmp_loc = '/home/ot/audits'  # Temp location for Audits on remote server
     try:
         parsed_json = json.loads(open(config_file).read())
@@ -277,11 +355,11 @@ def main():
     for host in parsed_json.values():
         for instance in host:
             # Set date for the zip name
-            if instance['Date'] == 'today':
+            if instance['Date'].lower() == 'today':
                 fdate = datetime.date.today().strftime("%Y%m%d")
-            elif instance['Date'] == 'yesterday':
+            elif instance['Date'].lower() == 'yesterday':
                 fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
-            elif instance['Date'] == 'all':
+            elif instance['Date'].lower() == 'all':
                 fdate = datetime.date.today().strftime("%Y%m%d") + '_All'
 
             instance_name = "%s's %s_%s_AuditTrail_%s_%s_%s" % (instance['Recipient'], instance['Client'],
@@ -301,13 +379,15 @@ def main():
                 complete += 1
                 logging.info('%s Completed Successfully', instance_name)
             except Exception as err:
-                # raise
                 print err
                 logging.error("%s Failed: %s", instance_name, err)
-                failed.append(instance_name)
+                failed.append("%s: %s" % (instance_name, err))
 
     logging.info('%s Completed', complete)
-    logging.error('%s Completed', failed)
+    logging.error('%s', failed)
+
+    mail = EmailResult()
+    mail.sendMail(['amcfarlane@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
 
 
 if __name__ == '__main__':

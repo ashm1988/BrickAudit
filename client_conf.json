@@ -3,7 +3,7 @@
         {
             "Recipient" : "FME",
             "Client" : "FME",
-            "Exchange" : "ASX",
+            "Exchange" : "EUR",
             "Instance" : "ft4asx1",
             "Host" : "10.234.100.30",
             "Date" : "all",
