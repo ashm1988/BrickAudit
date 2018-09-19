@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = '1.0'
+__version__ = '1.1'
 
 import zipfile
 import os
@@ -23,24 +23,31 @@ class ZipFiles(object):
         if not os.path.exists(self.temp_directory):
             os.makedirs(self.temp_directory)
 
-        self.output_name = 'Audit.%s.zip' % datetime.date.today().strftime("%Y%m%d")
+        # self.output_name = 'Audit.%s.zip' % datetime.date.today().strftime("%Y%m%d")
+        self.output_name = 'Audit.%s.zip' % self.filedate
         logging.info('\n')
 
     def audit_date(self):
-        if self.filedate == 'today':
-            fdate = datetime.date.today().strftime("%Y%m%d")  # current_date in {20181231 format}
-            adate = ['Audit.'+fdate+'.log']
+        try:
+            fdate = int(self.filedate)
+            adate = ['Audit.'+str(fdate)+'.log']
             self.date_logging(adate)
             self.audit_exists(adate)
-        elif self.filedate == 'yesterday':
-            fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")  # current_date -1 day
-            adate = ['Audit.'+fdate+'.log']
-            self.date_logging(adate)
-            self.audit_exists(adate)
-        elif self.filedate == 'all':
-            self.all_audits()
-        else:
-            logging.error('%s not recognised as a valid option', self.filedate)
+        except ValueError:
+            if self.filedate == 'today':
+                fdate = datetime.date.today().strftime("%Y%m%d")  # current_date in {20181231 format}
+                adate = ['Audit.'+fdate+'.log']
+                self.date_logging(adate)
+                self.audit_exists(adate)
+            elif self.filedate == 'yesterday':
+                fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")  # current_date -1 day
+                adate = ['Audit.'+fdate+'.log']
+                self.date_logging(adate)
+                self.audit_exists(adate)
+            elif self.filedate == 'all':
+                self.all_audits()
+            else:
+                logging.error('%s not recognised as a valid option', self.filedate)
 
     def audit_exists(self, adate):
         prod_files = os.listdir(self.audit_location)

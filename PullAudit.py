@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = '1.0'
+__version__ = '1.1'
 
 import sys
 import logging
@@ -14,6 +14,7 @@ import json
 import gnupg
 import pysftp
 import smtplib
+import argparse
 from socket import gethostname
 from email.MIMEMultipart import MIMEMultipart
 from email.MIMEBase import MIMEBase
@@ -36,14 +37,9 @@ gpg_home = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
 
 
 class ZipFiles(object):
-    def __init__(self, instance, tmp_loc):
+    def __init__(self, instance, tmp_loc, fdate):
         # Set date for the zip name
-        if instance['Date'].lower() == 'today':
-            fdate = datetime.date.today().strftime("%Y%m%d")
-        elif instance['Date'].lower() == 'yesterday':
-            fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
-        elif instance['Date'].lower() == 'all':
-            fdate = datetime.date.today().strftime("%Y%m%d")+'_All'
+        fdate = fdate
 
         # Set zippath/zipname and instance vars
         self.instance = instance
@@ -289,12 +285,6 @@ class BrickFTP(object):
                 logging.info('Pushing %s to %s on the Brick server', f, self.brick_loc)
                 self.sftp.put(os.path.join(self.zip_path, f), os.path.join(self.brick_loc, f))
 
-        # # Copy zip to Archive
-        # for f in enc_files:
-        #     if f.endswith('.zip'):
-        #         logging.info('Archive %s to %s', f, self.archive_path)
-        #         shutil.move(os.path.join(self.zip_path, f), os.path.join(self.archive_path, f))
-
         # Delete the uploaded gpg
         for f in enc_files:
             if f.endswith('.gpg'):
@@ -341,6 +331,7 @@ def main():
     # Set logging
     logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
 
+
     complete = 0
     failed = []
 
@@ -357,13 +348,19 @@ def main():
 
     for host in parsed_json.values():
         for instance in host:
-            # Set date for the zip name
-            if instance['Date'].lower() == 'today':
-                fdate = datetime.date.today().strftime("%Y%m%d")
-            elif instance['Date'].lower() == 'yesterday':
-                fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
-            elif instance['Date'].lower() == 'all':
-                fdate = datetime.date.today().strftime("%Y%m%d") + '_All'
+            try:
+                int(instance['Date'])
+                fdate = str(instance['Date'])
+            except ValueError:
+                # Set date for the zip name
+                if instance['Date'].lower() == 'today':
+                    fdate = datetime.date.today().strftime("%Y%m%d")
+                elif instance['Date'].lower() == 'yesterday':
+                    fdate = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
+                elif instance['Date'].lower() == 'all':
+                    fdate = datetime.date.today().strftime("%Y%m%d") + '_All'
+                else:
+                    raise Exception("Invalid date, Should be ['{date}, all, today or yesterday")
 
             instance_name = "%s's %s_%s_AuditTrail_%s_%s_%s" % (instance['Recipient'], instance['Client'],
                                                                 instance['Exchange'], instance['Instance'],
@@ -371,7 +368,7 @@ def main():
 
             try:
                 logging.info("Trying %s", instance_name)
-                zipaud = ZipFiles(instance, tmp_loc)
+                zipaud = ZipFiles(instance, tmp_loc, fdate)
                 zipaud.run_zipit()
                 decode = DecodeAudits(zipaud)
                 decode.decode()
@@ -389,8 +386,8 @@ def main():
     logging.info('%s Completed', complete)
     logging.error('%s', failed)
 
-    mail = EmailResult()
-    mail.sendMail(['amcfarlane@tradevela.com', 'fpotter@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
+    # mail = EmailResult()
+    # mail.sendMail(['amcfarlane@tradevela.com', 'fpotter@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
 
 if __name__ == '__main__':
     main()
