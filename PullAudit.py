@@ -13,8 +13,8 @@ import paramiko
 import json
 import gnupg
 import pysftp
-from socket import gethostname
 import smtplib
+from socket import gethostname
 from email.MIMEMultipart import MIMEMultipart
 from email.MIMEBase import MIMEBase
 from email.MIMEText import MIMEText
@@ -267,11 +267,11 @@ class BrickFTP(object):
 
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect('paas.brickftp.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        self.ssh.connect('paas.tradevela.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
         self.sftp = self.ssh.open_sftp()
         cnopts = pysftp.CnOpts()
         cnopts.hostkeys = None
-        self.pysftp = pysftp.Connection('paas.brickftp.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
 
     def push_to_brick(self):
         enc_files = os.listdir(self.zip_path)
@@ -310,8 +310,11 @@ class EmailResult(object):
         assert type(files) == list
 
         textmsg = ''
-        for instance in text:
-            textmsg += instance + '\n'
+        if len(text) > 0:
+            for instance in text:
+                textmsg += instance + '\n'
+        else:
+            textmsg = 'All SFTP instances Published to Brick successfully'
 
         msg = MIMEMultipart()
         msg['From'] = fro
@@ -387,8 +390,7 @@ def main():
     logging.error('%s', failed)
 
     mail = EmailResult()
-    mail.sendMail(['amcfarlane@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
-
+    mail.sendMail(['amcfarlane@tradevela.com', 'fpotter@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
 
 if __name__ == '__main__':
     main()
