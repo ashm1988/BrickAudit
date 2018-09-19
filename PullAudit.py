@@ -328,6 +328,9 @@ class EmailResult(object):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config_file", default="client_conf.json", help="Config file to run the script against")
+    args = parser.parse_args()
     # Set logging
     logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
 
@@ -335,7 +338,7 @@ def main():
     complete = 0
     failed = []
 
-    config_file = os.path.join(current_dir, 'client_conf.json')
+    config_file = os.path.join(current_dir, args.config_file)
     tmp_loc = '/home/ot/audits'  # Temp location for Audits on remote server
     try:
         parsed_json = json.loads(open(config_file).read())
