@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = '1.1'
+__version__ = '1.2'
 
 import sys
 import logging
@@ -254,20 +254,19 @@ class EncryptZIPs(object):
 
 class BrickFTP(object):
     def __init__(self, zipaud):
-        logging.info('Connecting to Brick')
         self.enc_loc = zipaud.instance['Recipient']
         self.zip_path = zipaud.zip_path
         self.archive_path = zipaud.archive_path
         self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'])  # zipaud.instance['Exchange'], zipaud.instance['Instance'])
         self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'])
 
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect('paas.tradevela.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
-        self.sftp = self.ssh.open_sftp()
-        cnopts = pysftp.CnOpts()
-        cnopts.hostkeys = None
-        self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        # self.ssh = paramiko.SSHClient()
+        # self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # self.ssh.connect('paas.tradevela.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        # self.sftp = self.ssh.open_sftp()
+        # cnopts = pysftp.CnOpts()
+        # cnopts.hostkeys = None
+        # self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
 
     def push_to_brick(self):
         enc_files = os.listdir(self.zip_path)
@@ -289,6 +288,28 @@ class BrickFTP(object):
         for f in enc_files:
             if f.endswith('.gpg'):
                 os.remove(os.path.join(self.zip_path, f))
+
+
+class BrickConnect(object):
+    def __init__(self):
+        pass
+
+    def connect(self):
+        logging.info('Connecting to Brick')
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.ssh.connect('paas.tradevela.com', username='a.mcfarlane',
+                         key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        self.sftp = self.ssh.open_sftp()
+        cnopts = pysftp.CnOpts()
+        cnopts.hostkeys = None
+        self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts,
+                                        private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+
+    def close(self):
+        logging.debug("Closing brick connection")
+        self.ssh.close()
+        self.pysftp.close()
 
 
 class EmailResult(object):
@@ -369,6 +390,9 @@ def main():
                                                                 instance['Exchange'], instance['Instance'],
                                                                 instance['SessionID'], fdate)
 
+            brickconnect = BrickConnect()
+            brickconnect.connect()
+
             try:
                 logging.info("Trying %s", instance_name)
                 zipaud = ZipFiles(instance, tmp_loc, fdate)
@@ -385,6 +409,8 @@ def main():
                 print err
                 logging.error("%s Failed: %s", instance_name, err)
                 failed.append("%s: %s" % (instance_name, err))
+
+            brickconnect.close()
 
     logging.info('%s Completed', complete)
     logging.error('%s', failed)
