@@ -36,6 +36,26 @@ gpg_home = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
 ####################
 
 
+class BrickCon(object):
+
+    def connect(self):
+        logging.info('Connecting to Brick')
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.ssh.connect('paas.tradevela.com', username='a.mcfarlane',
+                         key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+        self.sftp = self.ssh.open_sftp()
+        cnopts = pysftp.CnOpts()
+        cnopts.hostkeys = None
+        self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts,
+                                        private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
+
+    def close(self):
+        logging.debug("Closing brick connection")
+        self.ssh.close()
+        self.pysftp.close()
+
+
 class ZipFiles(object):
     def __init__(self, instance, tmp_loc, fdate):
         # Set date for the zip name
@@ -253,12 +273,17 @@ class EncryptZIPs(object):
 
 
 class BrickFTP(object):
-    def __init__(self, zipaud):
+    def __init__(self, zipaud, brickcon):
         self.enc_loc = zipaud.instance['Recipient']
         self.zip_path = zipaud.zip_path
         self.archive_path = zipaud.archive_path
         self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'])  # zipaud.instance['Exchange'], zipaud.instance['Instance'])
         self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'])
+
+        self.ssh = brickcon.ssh
+        self.sftp = brickcon.sftp
+        self.pysftp = brickcon.pysftp
+
 
         # self.ssh = paramiko.SSHClient()
         # self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -288,28 +313,6 @@ class BrickFTP(object):
         for f in enc_files:
             if f.endswith('.gpg'):
                 os.remove(os.path.join(self.zip_path, f))
-
-
-class BrickConnect(object):
-    def __init__(self):
-        pass
-
-    def connect(self):
-        logging.info('Connecting to Brick')
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect('paas.tradevela.com', username='a.mcfarlane',
-                         key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
-        self.sftp = self.ssh.open_sftp()
-        cnopts = pysftp.CnOpts()
-        cnopts.hostkeys = None
-        self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts,
-                                        private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
-
-    def close(self):
-        logging.debug("Closing brick connection")
-        self.ssh.close()
-        self.pysftp.close()
 
 
 class EmailResult(object):
@@ -370,6 +373,9 @@ def main():
         logging.error('Cannot find %s', config_file)
         sys.exit()
 
+    brickconnect = BrickCon()
+    brickconnect.connect()
+
     for host in parsed_json.values():
         for instance in host:
             try:
@@ -390,9 +396,6 @@ def main():
                                                                 instance['Exchange'], instance['Instance'],
                                                                 instance['SessionID'], fdate)
 
-            brickconnect = BrickConnect()
-            brickconnect.connect()
-
             try:
                 logging.info("Trying %s", instance_name)
                 zipaud = ZipFiles(instance, tmp_loc, fdate)
@@ -401,7 +404,7 @@ def main():
                 decode.decode()
                 encrypt = EncryptZIPs(zipaud)
                 encrypt.encrypt()
-                brick = BrickFTP(zipaud)
+                brick = BrickFTP(zipaud, brickconnect)
                 brick.push_to_brick()
                 complete += 1
                 logging.info('%s Completed Successfully', instance_name)
@@ -410,7 +413,7 @@ def main():
                 logging.error("%s Failed: %s", instance_name, err)
                 failed.append("%s: %s" % (instance_name, err))
 
-            brickconnect.close()
+    brickconnect.close()
 
     logging.info('%s Completed', complete)
     logging.error('%s', failed)
