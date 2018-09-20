@@ -336,6 +336,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config_file", default="client_conf.json", help="Config file to run the script against")
     parser.add_argument("-a", "--archive", action="store_true", help="To run against brick archive folders")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
     args = parser.parse_args()
     # Set logging
     logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
