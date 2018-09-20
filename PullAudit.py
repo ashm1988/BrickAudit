@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = '1.2'
+__version__ = '1.3'
 
 import sys
 import logging
@@ -21,19 +21,7 @@ from email.MIMEBase import MIMEBase
 from email.MIMEText import MIMEText
 from email.Utils import COMMASPACE, formatdate
 from email import Encoders
-
-####################
-# for this script ##
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sftp_script = 'zip_audits.py'  # Name of SFTP Script
-scripts_loc = '/opt/ot/scripts'  # Where on the remote server to put the Script
-sftp_script_loc = r'/opt/ot/scripts/zip_audits.py'  # Lazy location naming for the script to run on the remote server
-client_zip_location = r'C:\Users\amcfarlane\Documents\temp\audits'  # Base location of where to save/process the audits
-A2C_loc = r'C:\Users\amcfarlane\Documents'  # location of the FR Admin Tools
-ssh_key_loc = r'C:\cygwin64\home\amcfarlane\.ssh'  # ssh key location
-gpg_loc = r'C:\Program Files (x86)\GnuPG\bin\gpg.exe'
-gpg_home = r'C:\Users\amcfarlane\AppData\Roaming\gnupg'
-####################
+from configs import *
 
 
 class BrickCon(object):
@@ -273,25 +261,18 @@ class EncryptZIPs(object):
 
 
 class BrickFTP(object):
-    def __init__(self, zipaud, brickcon):
+    def __init__(self, zipaud, brickcon, archive):
         self.enc_loc = zipaud.instance['Recipient']
         self.zip_path = zipaud.zip_path
-        self.archive_path = zipaud.archive_path
-        self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'])  # zipaud.instance['Exchange'], zipaud.instance['Instance'])
-        self.brick_loc_archive = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'])
+        self.archive_path = zipaud.archive_path # currently not used
+        if archive:
+            self.brick_loc = os.path.join('PaaS', zipaud.instance['Recipient'])  # zipaud.instance['Exchange'], zipaud.instance['Instance'])
+        else:
+            self.brick_loc = os.path.join('PaaS', 'Archive', zipaud.instance['Recipient'])
 
         self.ssh = brickcon.ssh
         self.sftp = brickcon.sftp
         self.pysftp = brickcon.pysftp
-
-
-        # self.ssh = paramiko.SSHClient()
-        # self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        # self.ssh.connect('paas.tradevela.com', username='a.mcfarlane', key_filename=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
-        # self.sftp = self.ssh.open_sftp()
-        # cnopts = pysftp.CnOpts()
-        # cnopts.hostkeys = None
-        # self.pysftp = pysftp.Connection('paas.tradevela.com', username='a.mcfarlane', cnopts=cnopts, private_key=os.path.join(ssh_key_loc, 'id_rsa'), port=22)
 
     def push_to_brick(self):
         enc_files = os.listdir(self.zip_path)
@@ -299,9 +280,9 @@ class BrickFTP(object):
         if not self.pysftp.exists(self.brick_loc):
             logging.info('Creating %s on Brick server', self.brick_loc)
             self.pysftp.makedirs(self.brick_loc)
-        if not self.pysftp.exists(self.brick_loc_archive):
-            logging.info('Creating %s on Brick server', self.brick_loc_archive)
-            self.pysftp.makedirs(self.brick_loc_archive)
+        # if not self.pysftp.exists(self.brick_loc_archive):
+        #     logging.info('Creating %s on Brick server', self.brick_loc_archive)
+        #     self.pysftp.makedirs(self.brick_loc_archive)
 
         # Push the gpg to Brick
         for f in enc_files:
@@ -354,13 +335,14 @@ class EmailResult(object):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config_file", default="client_conf.json", help="Config file to run the script against")
+    parser.add_argument("-a", "--archive", action="store_true", help="To run against brick archive folders")
     args = parser.parse_args()
     # Set logging
     logging.basicConfig(format='%(asctime)s: %(levelname)s: %(funcName)s: %(message)s', level=logging.DEBUG)
 
 
-    complete = 0
     failed = []
+    complete = 0
 
     config_file = os.path.join(current_dir, args.config_file)
     tmp_loc = '/home/ot/audits'  # Temp location for Audits on remote server
@@ -404,7 +386,7 @@ def main():
                 decode.decode()
                 encrypt = EncryptZIPs(zipaud)
                 encrypt.encrypt()
-                brick = BrickFTP(zipaud, brickconnect)
+                brick = BrickFTP(zipaud, brickconnect, args.archive)
                 brick.push_to_brick()
                 complete += 1
                 logging.info('%s Completed Successfully', instance_name)
@@ -420,6 +402,7 @@ def main():
 
     # mail = EmailResult()
     # mail.sendMail(['amcfarlane@tradevela.com', 'fpotter@tradevela.com'], 'AuditReport@PaaSMgtVM.com', 'PaaSMgtVM Audit Report %s' % datetime.date.today().strftime("%Y%m%d"), failed)
+
 
 if __name__ == '__main__':
     main()
